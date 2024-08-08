@@ -1,65 +1,83 @@
 const aptos = require('aptos');
 const { Buffer } = require('buffer');
 
-// Kunci privat Anda dalam format heksadesimal
-const privateKeyHex = '64e27eba26ae2aaef328cb09df7d693645c1d468e0afc62fc3905c3f410cb84b';
-const privateKeyArray = Uint8Array.from(Buffer.from(privateKeyHex, 'hex'));
+// Daftar kunci privat dalam format heksadesimal
+const privateKeysHex = [
+    '30226b75450dae00750227b63ec2bc6003b12b509a33edb7f7c712b51a477852',
+    '6320bed4ff3b18002d29266bf818175b192d60c507405d034794574f802663a9',
+    '08a168743e61c61411ff7b9d50a20c254cf50f2fbf05f1b7779a4048568e09ab',
+    // Tambahkan kunci privat lainnya di sini
+];
 
 // Buat akun Aptos dari kunci privat
-const account = new aptos.AptosAccount(privateKeyArray);
+const accounts = privateKeysHex.map(keyHex => {
+    const privateKeyArray = Uint8Array.from(Buffer.from(keyHex, 'hex'));
+    return new aptos.AptosAccount(privateKeyArray);
+});
 
 // Buat klien Aptos untuk testnet
 const client = new aptos.AptosClient("https://aptos.testnet.suzuka.movementlabs.xyz/v1");
 
-// Nilai yang diharapkan dan slippage
-const expectedAmountRZR = 0.0161636;
-const slippagePercent = 0.50;
-const slippageFactor = 1 + (slippagePercent / 100);
-
-// Hitung jumlah minimum yang diterima setelah slippage
-const minimumReceivedRZR = expectedAmountRZR / slippageFactor;
-const minimumReceivedRZRInUnit = Math.floor(minimumReceivedRZR * 1e8); // Misalnya, 1e8 untuk presisi
-
 async function swap() {
-    for (let i = 0; i < 20; i++) {
-        try {
-            console.log(`\nMelakukan swap ke-${i + 1}`);
+    for (let i = 1; i <= 20; i++) {
+        console.log(`Pengulangan ke-${i}`);
+        for (const account of accounts) {
+            try {
+                console.log(`Proses swap untuk akun: ${account.address().hex()}`);
 
-            // Payload swap dengan jumlah minimum yang dihitung
-            const payload = {
-                function: "0x65c7939df25c4986b38a6af99602bf17daa1a2d7b53e6847ed25c04f74f54607::RazorSwapPool::swap_coins_for_exact_coins_2_pair_entry",
-                type_arguments: [
-                    "0x1::aptos_coin::AptosCoin",
-                    "0x8093e814c5cde1a2775750e999b3d9a01633fca54959126d890e87d95acbabca::staking::StakeCoin",
-                    "0xcab9a7545a4f4a46308e2ac914a5ce2dcf63482713e683b4bc5fc4b514a790f2::razor_token::Razor"
-                ],
-                arguments: [
-                    "1000000000", // Jumlah koin yang akan ditukar
-                    minimumReceivedRZRInUnit.toString() // Jumlah minimum koin yang diterima
-                ],
-                type: "entry_function_payload"
-            };
+                // Verifikasi akun
+                const accountInfo = await client.getAccount(account.address());
+                console.log("Akun ditemukan");
 
-            // Buat transaksi
-            const transaction = await client.generateTransaction(account.address(), payload);
-            const signedTransaction = await client.signTransaction(account, transaction);
-            const transactionResponse = await client.submitTransaction(signedTransaction);
+                // Payload swap
+                const payload = {
+                    function: "0x65c7939df25c4986b38a6af99602bf17daa1a2d7b53e6847ed25c04f74f54607::RazorSwapPool::swap_exact_coins_for_coins_entry",
+                    type_arguments: [
+                        "0x275f508689de8756169d1ee02d889c777de1cebda3a7bbcce63ba8a27c563c6f::tokens::USDC",
+                        "0x275f508689de8756169d1ee02d889c777de1cebda3a7bbcce63ba8a27c563c6f::tokens::WBTC"
+                    ],
+                    arguments: [
+                        "10000000", // Jumlah koin yang akan ditukar
+                        "14639"     // Jumlah minimum koin yang diterima (diatur ke 0 untuk fleksibilitas maksimum)
+                    ]
+                };
 
-            console.log(`Alamat: ${account.address()}`);
-            console.log(`Hash Transaksi: ${transactionResponse.hash}`);
+                // Buat transaksi
+                const transaction = await client.generateTransaction(account.address(), payload);
+                const signedTransaction = await client.signTransaction(account, transaction);
+                const transactionResponse = await client.submitTransaction(signedTransaction);
 
-            // Hitung mundur 2 menit (120 detik)
-            for (let seconds = 120; seconds > 0; seconds--) {
-                process.stdout.write(`\rMenunggu ${seconds} detik sebelum swap berikutnya...`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Tunggu 1 detik
+                console.log(`Transaksi dikirim untuk akun ${account.address().hex()}:`, transactionResponse.hash);
+
+                // Tunggu konfirmasi transaksi
+                const result = await waitForTransaction(client, transactionResponse.hash);
+                console.log(`Transaksi dikonfirmasi untuk akun ${account.address().hex()}:`);
+
+            } catch (error) {
+                console.error(`Terjadi kesalahan untuk akun ${account.address().hex()}:`, error);
             }
-            console.log(); // Pindah ke baris baru setelah hitung mundur
-
-        } catch (error) {
-            console.error(`Terjadi kesalahan pada swap ke-${i + 1}:`, error);
-            // Tunggu sebelum mencoba lagi
-            await new Promise(resolve => setTimeout(resolve, 10000)); // Tunggu 10 detik sebelum mencoba lagi
         }
+
+        // Tampilkan hitung mundur sebelum pengulangan berikutnya
+        for (let j = 20; j > 0; j--) {
+            process.stdout.write(`\rMenunggu ${j} detik untuk pengulangan berikutnya...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        console.log('');
+    }
+}
+
+async function waitForTransaction(client, transactionHash) {
+    while (true) {
+        try {
+            const response = await client.getTransactionByHash(transactionHash);
+            if (response) {
+                return response;
+            }
+        } catch (error) {
+            console.error("Kesalahan saat memeriksa status transaksi:", error);
+        }
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Tunggu 5 detik sebelum memeriksa lagi
     }
 }
 
