@@ -3,9 +3,9 @@ const { Buffer } = require('buffer');
 
 // Daftar kunci privat dalam format heksadesimal
 const privateKeysHex = [
-    '30226b75450dae00750227b63ec2bc6003b12b509a33edb7f7c712b51a477852',
-    '6320bed4ff3b18002d29266bf818175b192d60c507405d034794574f802663a9',
-    '08a168743e61c61411ff7b9d50a20c254cf50f2fbf05f1b7779a4048568e09ab',
+    '30226b75450dae00750227b63ec2bc6003b12b509a33edb7f7c712b51a477444',
+    '2',
+    '3',
     // Tambahkan kunci privat lainnya di sini
 ];
 
